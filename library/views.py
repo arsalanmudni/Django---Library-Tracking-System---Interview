@@ -1,3 +1,8 @@
+from django.core.cache import cache
+from django.utils.cache import get_cache_key
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_cookie
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from .models import Author, Book, Member, Loan
@@ -6,14 +11,26 @@ from rest_framework.decorators import action
 from django.utils import timezone
 from .tasks import send_loan_notification
 
+
 class AuthorViewSet(viewsets.ModelViewSet):
     queryset = Author.objects.all()
     serializer_class = AuthorSerializer
+
 
 class BookViewSet(viewsets.ModelViewSet):
     queryset = Book.objects.all()
     serializer_class = BookSerializer
 
+    @method_decorator(cache_page(60 * 60 * 2))
+    @method_decorator(vary_on_cookie)
+    def list(self, request, *args, **kwargs):
+        return super().list(self, request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        key = get_cache_key(request, method="GET")
+        if cache.has_key(key):
+            cache.delete(key)
+        return super().destroy(self, request, *args, **kwargs)
     @action(detail=True, methods=['post'])
     def loan(self, request, pk=None):
         book = self.get_object()
@@ -45,9 +62,11 @@ class BookViewSet(viewsets.ModelViewSet):
         book.save()
         return Response({'status': 'Book returned successfully.'}, status=status.HTTP_200_OK)
 
+
 class MemberViewSet(viewsets.ModelViewSet):
     queryset = Member.objects.all()
     serializer_class = MemberSerializer
+
 
 class LoanViewSet(viewsets.ModelViewSet):
     queryset = Loan.objects.all()
